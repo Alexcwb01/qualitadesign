@@ -46,6 +46,9 @@ SITEMAPS = ["wp-sitemap-posts-page-1.xml", "wp-sitemap-posts-post-1.xml",
 # Links que já estavam quebrados (404) no site original -> destino correto.
 LINK_FIXES = {"/forest-highway-with-green-leaves": "/marcas-possuem-historia.htm"}
 SPAM_HOSTS = {"lafamilia.miami"}
+# Trechos do site original removidos a pedido (seletores CSS) e scripts que ficam sem uso.
+REMOVE_ELEMENTS = ["section#parallax-video"]      # vídeo de fundo "Time Square" (YouTube)
+REMOVE_SCRIPT_IDS = {"mbytplayer-js"}             # player do YouTube usado só por esse vídeo
 # Âncoras que não existem no site original -> seção correta (a seta "mouse" do banner).
 ANCHOR_FIXES = {"mission": "projects"}
 # Caminhos internos do WordPress que não existem num site estático.
@@ -503,7 +506,8 @@ class Site:
                 meta.decompose()
         for s in soup.find_all("script"):
             sid, src, txt = s.get("id", ""), s.get("src", ""), s.string or ""
-            if (sid in {"wp-emoji-settings", "comment-reply-js", "sena-main-js-extra"} or "simple-likes" in sid
+            if (sid in {"wp-emoji-settings", "comment-reply-js", "sena-main-js-extra"} | REMOVE_SCRIPT_IDS
+                    or "simple-likes" in sid
                     or s.get("type") == "speculationrules" or "sbiajaxurl" in txt
                     or MALWARE_SIG.search(txt)
                     or "wp-emoji" in src or "comment-reply" in src
@@ -520,7 +524,7 @@ class Site:
             if st.get("id") in {"wp-emoji-styles", "wp-emoji-styles-inline-css"} or "wp-smiley" in (st.string or ""):
                 st.decompose()
         # recursos que dependem do PHP/AJAX do WordPress
-        for sel in [".search-wrapper", ".widget_search", "li.post-like", ".sl-wrapper",
+        for sel in REMOVE_ELEMENTS + [".search-wrapper", ".widget_search", "li.post-like", ".sl-wrapper",
                     "#respond", ".comment-respond", "#comments"]:
             for el in soup.select(sel):
                 el.decompose()

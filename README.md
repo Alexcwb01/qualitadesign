@@ -44,4 +44,4 @@ python3 tools/verify_site.py .
 * Ao clicar num projeto do portfólio, o painel abre com as mesmas imagens e textos do original
   (agora também em projects.html, onde no original o clique não abria nada). O projeto
   "Vicentini&Martins" já está vazio no site original (só título e categorias).
-* O vídeo de fundo da seção "Time Square" continua vindo do YouTube (conteúdo externo, não do WordPress).
+* A seção com o vídeo de fundo "Time Square" (YouTube) foi removida a pedido (`REMOVE_ELEMENTS`).
