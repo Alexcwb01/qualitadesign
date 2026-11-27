@@ -57,6 +57,30 @@ JUNK_PATH = re.compile(r"^/(wp-admin|wp-json|wp-login|xmlrpc\.php|feed|comments/
 MALWARE_SIG = re.compile(r"Redirecting\.\.\.|adBlockingDetected|refererBrowser|timezoneBrowser|"
                          r"google-ad-bottom-outer|document\.write\(`<a id=")
 
+# Ajustes de comportamento que o site original não tinha (gravado em assets/js/static-fixes.js).
+STATIC_FIXES_JS = """/* Ajustes do site estático. */
+(function ($) {
+  "use strict";
+  /* iOS/Safari: o link do card do portfólio fica dentro de um overlay que só aparece no :hover,
+     então o primeiro toque só "passa o mouse" e não dispara o clique (o texto aparece, mas a barra
+     vermelha e o painel do projeto não). Num toque sem arrastar, dispara o clique do tema na hora. */
+  var start = null;
+  $(document).on("touchstart", ".portfolio-item a", function (e) {
+    var t = e.originalEvent.touches[0];
+    start = { x: t.clientX, y: t.clientY };
+  });
+  $(document).on("touchend", ".portfolio-item a", function (e) {
+    if (!start) { return; }
+    var t = e.originalEvent.changedTouches[0];
+    var moved = Math.abs(t.clientX - start.x) > 10 || Math.abs(t.clientY - start.y) > 10;
+    start = null;
+    if (moved) { return; }                 /* foi rolagem, não toque */
+    e.preventDefault();                    /* cancela o hover/clique sintético do navegador */
+    $(this).trigger("click");              /* abre o painel como no desktop */
+  });
+})(jQuery);
+"""
+
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 FONT_EXT = {".woff", ".woff2", ".ttf", ".eot", ".otf"}
@@ -568,6 +592,13 @@ class Site:
 
     def link_portfolio_frags(self, soup, out_file):
         item = soup.select_one(".portfolio-item")
+        if item is not None and soup.body is not None:
+            path = "assets/js/static-fixes.js"
+            dst = os.path.join(self.out, path)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(dst, "w", encoding="utf-8") as fh:
+                fh.write(STATIC_FIXES_JS)
+            soup.body.append(soup.new_tag("script", src=rel(out_file, path), defer=""))
         if item is not None and soup.find(id="portfolio-details") is None:
             # o /projects original não tem o painel, então o clique não abria nada: cria como na home
             sec = item.find_parent("section")
