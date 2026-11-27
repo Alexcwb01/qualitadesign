@@ -34,6 +34,9 @@ python3 tools/verify_site.py .
   (cassinos, "lorem ipsum", "test-gnd-…"), páginas com nomes hexadecimais e usuários
   `serverHost`/`serverHostx`. O script só exporta conteúdo publicado antes de 2022 (`CUTOFF`)
   e remove cards, links e contagens ligados ao spam.
+* Em 27/11/2026 o WordPress passou a injetar um **script malicioso de redirecionamento**
+  (página "Redirecting...") nas respostas AJAX. O build remove esse conteúdo e **para com erro**
+  se encontrar qualquer assinatura dele no site gerado (`MALWARE_SIG`).
 * Removidos por dependerem do PHP do WordPress: busca, botões "curtir" (simple-likes) e comentários.
 * Links que já estavam quebrados no site original foram corrigidos: o slide "Marcas possuem história"
   aponta para o post correspondente, a seta do banner aponta para `#projects`, e o menu das páginas

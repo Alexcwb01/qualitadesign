@@ -52,6 +52,11 @@ ANCHOR_FIXES = {"mission": "projects"}
 JUNK_PATH = re.compile(r"^/(wp-admin|wp-json|wp-login|xmlrpc\.php|feed|comments/feed|"
                        r"author|category|tag|portfolio-category|page)(/|$)|/feed/?$")
 
+# Assinaturas do malware de redirecionamento injetado no WordPress (página "Redirecting..." com
+# script que coleta dados do navegador e redireciona o visitante).
+MALWARE_SIG = re.compile(r"Redirecting\.\.\.|adBlockingDetected|refererBrowser|timezoneBrowser|"
+                         r"google-ad-bottom-outer|document\.write\(`<a id=")
+
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 FONT_EXT = {".woff", ".woff2", ".ttf", ".eot", ".otf"}
@@ -149,6 +154,16 @@ def parse_srcset(val):
         if url:
             out.append((url, desc))
     return out
+
+
+def strip_injected(text, where):
+    """Fragmentos AJAX nunca contêm um documento HTML completo: o que vier antes do
+    último </html> foi injetado pelo malware."""
+    if "</html>" in text.lower():
+        idx = text.lower().rfind("</html>") + len("</html>")
+        log(f"  ALERTA: conteúdo injetado (malware) removido de {where}")
+        text = text[idx:]
+    return text
 
 
 def rel(from_file, to_file):
@@ -330,12 +345,15 @@ class Site:
                 if k in self.allowed and k not in seen:
                     seen.add(k)
                     cat = art.select_one(".blog-category a")
+                    img = art.select_one("img.wp-post-image") or art.find("img")
                     self.legit_posts.append({
                         "key": k, "url": SITE + k, "title": a.get_text(strip=True),
                         "date": (art.select_one(".blog-date") or soup.new_tag("x")).get_text(strip=True),
                         "category": cat.get_text(strip=True) if cat else "",
                         "excerpt": (art.select_one(".post-content p") or soup.new_tag("x")).get_text(" ", strip=True),
                         "article": str(art),
+                        "image": img.get("src") if img else None,
+                        "image_srcset": img.get("srcset") if img else None,
                     })
             if not soup.select_one(".post-nav .btn-prev"):
                 break
@@ -384,8 +402,18 @@ class Site:
                     cat.string = p["category"]
                 spans = c.select(".blog-about > span")
                 if len(spans) >= 2:
-                    spans[0].clear()
+                    spans[0].decompose()   # autor (vazio): evita o "•" solto antes da data
                     spans[1].string = p["date"]
+                # imagem de destaque, como o tema renderiza: a tag da categoria fica sobre a foto
+                holder = cat.parent if cat is not None else None
+                if p.get("image") and holder is not None and not holder.select_one(".blog-img-link"):
+                    link = soup.new_tag("a", href=p["url"], attrs={"class": "blog-img-link"})
+                    im = soup.new_tag("img", src=p["image"], alt=p["title"], attrs={"class": "blog-img"})
+                    if p.get("image_srcset"):
+                        im["srcset"] = p["image_srcset"]
+                        im["sizes"] = "(max-width: 767px) 100vw, 360px"
+                    link.append(im)
+                    holder.insert(0, link)
                 a = c.select_one(".blog-text h4 a")
                 a["href"], a.string = p["url"], p["title"]
                 wrapper = c.select_one(".blog-wrapper")
@@ -453,6 +481,7 @@ class Site:
             sid, src, txt = s.get("id", ""), s.get("src", ""), s.string or ""
             if (sid in {"wp-emoji-settings", "comment-reply-js", "sena-main-js-extra"} or "simple-likes" in sid
                     or s.get("type") == "speculationrules" or "sbiajaxurl" in txt
+                    or MALWARE_SIG.search(txt)
                     or "wp-emoji" in src or "comment-reply" in src
                     or "wpEmojiSettings" in txt or "wp-emoji" in txt):
                 s.decompose()
@@ -500,7 +529,7 @@ class Site:
             if r.status_code != 200 or "vc_grid" not in r.text:
                 log(f"  aviso: não consegui pré-renderizar a grade em {key} (HTTP {r.status_code})")
                 continue
-            frag = BeautifulSoup(r.text, "html.parser")
+            frag = BeautifulSoup(strip_injected(r.text, f"grade de {key}"), "html.parser")
             self.clean_wordpress(frag)
             self.remove_spam_cards(frag)
             self.rewrite(frag, key, out_file)   # caminhos relativos à página que recebe o HTML
@@ -524,7 +553,7 @@ class Site:
             if status != 200 or b"single-portfolio" not in data:
                 log(f"  aviso: fragmento do portfólio {key} indisponível (HTTP {status})")
                 continue
-            frag = BeautifulSoup(data.decode("utf-8", "replace"), "html.parser")
+            frag = BeautifulSoup(strip_injected(data.decode("utf-8", "replace"), f"painel {key}"), "html.parser")
             self.clean_wordpress(frag)
             self.remove_spam_cards(frag)
             # caminhos relativos à raiz: o painel existe em index.html e projects.html
@@ -729,6 +758,18 @@ class Site:
             out = re.sub(r"\n\s*\n+", "\n", out)
             with open(dst, "w", encoding="utf-8") as fh:
                 fh.write(out)
+        infected = []
+        for d, _, files in os.walk(self.out):
+            if "/.git" in d or d.endswith("/tools"):
+                continue
+            for fn in files:
+                if fn.endswith((".html", ".js", ".css")):
+                    with open(os.path.join(d, fn), encoding="utf-8", errors="replace") as fh:
+                        if MALWARE_SIG.search(fh.read()):
+                            infected.append(os.path.relpath(os.path.join(d, fn), self.out))
+        if infected:
+            log(f"\nERRO: assinatura de malware encontrada em {infected}. Não publique este build.")
+            sys.exit(1)
         log("\n=== resumo ===")
         log(f"páginas: {len(self.pages)}; assets: {sum(1 for v in self.assets.map.values() if v)}")
         log(f"cards de spam removidos: {self.report['removed_cards']}")
