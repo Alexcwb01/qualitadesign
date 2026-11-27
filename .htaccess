@@ -1,0 +1,74 @@
+# Qualitá Design: site estático (Apache)
+# Envie este arquivo junto com o site para a raiz (public_html / www).
+# O GitHub Pages ignora este arquivo (lá os redirecionamentos usam os arquivos .htm).
+
+Options -Indexes -MultiViews
+DirectoryIndex index.html
+AddDefaultCharset UTF-8
+ErrorDocument 404 /404.html
+ErrorDocument 410 /404.html
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# 1) Sempre HTTPS
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# 2) Restos do WordPress e do spam injetado: 410 (removido), para o Google tirar da busca
+RewriteRule ^(wp-admin|wp-includes|wp-content|wp-json)(/|$) - [G,L]
+RewriteRule ^(wp-login\.php|xmlrpc\.php|wp-cron\.php|wp-.*\.php|wp-sitemap.*\.xml|wp-sitemap-.*\.xsl)$ - [G,L]
+RewriteRule ^(feed|comments/feed|author|category|tag|portfolio-category|news/page)(/|$) - [G,L]
+RewriteRule (^|/)feed/?$ - [G,L]
+RewriteRule ^[0-9a-f]{12}-htm(\.htm)?/?$ - [G,L]
+RewriteCond %{QUERY_STRING} (^|&)(p|page_id|s|attachment_id)= [NC]
+RewriteRule ^ - [G,L]
+
+# 3) Endereços antigos do WordPress -> páginas .html (301 permanente)
+#    /portfolio/  ->  página do portfólio
+RewriteRule ^portfolio/?$ https://%{HTTP_HOST}/projects.html [R=301,L]
+#    /about/  ->  /about.html (direto, sem salto extra)
+RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+RewriteRule ^(.+?)/$ https://%{HTTP_HOST}/$1.html [R=301,L]
+#    outras URLs com barra no fim -> sem barra
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.+)/$ https://%{HTTP_HOST}/$1 [R=301,L]
+#    /marcas-possuem-historia.htm  ->  /marcas-possuem-historia.html
+RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+RewriteRule ^(.+)\.htm$ https://%{HTTP_HOST}/$1.html [R=301,L]
+#    qualquer outro .htm (posts de spam): removido
+RewriteRule \.htm$ - [G,L]
+#    /about  ->  /about.html ; /portfolio/brand-minute  ->  /portfolio/brand-minute.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+RewriteRule ^(.+)$ https://%{HTTP_HOST}/$1.html [R=301,L]
+#    /index.html  ->  /
+RewriteCond %{THE_REQUEST} \s/index\.html[\s?]
+RewriteRule ^index\.html$ https://%{HTTP_HOST}/ [R=301,L]
+</IfModule>
+
+# Arquivos do repositório que não fazem parte do site
+RedirectMatch 404 ^/(tools/.*|README\.md|\.git.*)$
+
+# Compressão e cache
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript text/javascript image/svg+xml font/ttf application/font-sfnt
+</IfModule>
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresDefault "access plus 1 week"
+  ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType image/jpeg "access plus 1 month"
+  ExpiresByType image/png "access plus 1 month"
+  ExpiresByType font/woff2 "access plus 1 year"
+  ExpiresByType font/woff "access plus 1 year"
+</IfModule>
+
+# Segurança básica
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

@@ -32,7 +32,13 @@ def local_target(base_file, ref):
         return None, None
     sp = urlsplit(ref)
     path = unquote(sp.path)
-    target = os.path.normpath(os.path.join(os.path.dirname(base_file), path)) if path else base_file
+    if path.startswith("/"):
+        # caminho absoluto (ex.: 404.html): relativo à raiz do site; diretório -> index.html
+        target = os.path.normpath(os.path.join(ROOT, path.lstrip("/")))
+        if os.path.isdir(target):
+            target = os.path.join(target, "index.html")
+    else:
+        target = os.path.normpath(os.path.join(os.path.dirname(base_file), path)) if path else base_file
     return target, sp.fragment
 
 

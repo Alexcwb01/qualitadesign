@@ -17,10 +17,49 @@ tools/build_static.py          script que baixa e converte o site
 tools/verify_site.py           verificação de links, assets e restos do WordPress
 ```
 
-Basta publicar a pasta em qualquer hospedagem estática (GitHub Pages, Netlify, Apache, Nginx…).
 Para testar localmente: `python3 -m http.server` e abra http://localhost:8000.
 
-## Regenerar
+## Publicar
+
+O que vai para o servidor: os arquivos `*.html`, `*.htm`, `.htaccess`, e as pastas `portfolio/` e `assets/`.
+**Não** envie `tools/`, `README.md` nem `.git/`.
+
+### Opção A: hospedagem atual (Apache, cPanel/FTP)
+
+1. Faça backup completo do WordPress (arquivos + banco) e guarde **fora** do servidor. Ele contém
+   malware: não reinstale, use só para recuperar algum arquivo se precisar.
+2. Apague **tudo** em `public_html` (inclusive arquivos ocultos como `.htaccess`) e o banco MySQL do WordPress.
+3. Troque as senhas da hospedagem, do FTP e do painel.
+4. Envie os arquivos listados acima para `public_html`. Ative "mostrar arquivos ocultos" no
+   gerenciador de arquivos/FTP para o `.htaccess` ir junto.
+
+O `.htaccess` (testado no Apache 2.4):
+* força HTTPS;
+* redireciona com 301 os endereços antigos (`/about`, `/about/`, `/portfolio/brand-minute`,
+  `/marcas-possuem-historia.htm`...) para as páginas `.html`, em um único salto;
+* responde **410 (removido)** para `wp-admin`, `wp-login.php`, `xmlrpc.php`, `wp-content`, `wp-json`, feeds,
+  páginas de autor/categoria/tag e os posts de spam, para o Google tirá-los da busca;
+* usa `404.html` como página de erro; esconde `tools/` e `README.md` se forem enviados por engano;
+* liga compressão gzip e cache de imagens/fontes.
+
+### Opção B: GitHub Pages
+
+1. *Settings → Pages → Branch: `main` / `(root)`*. O site fica em `https://alexcwb01.github.io/qualitadesign/`.
+2. Para usar o domínio: adicione o arquivo `CNAME` com `www.qualitadesign.com.br` (só nesse momento,
+   pois ele faz o endereço github.io redirecionar para o domínio) e configure no DNS (Registro.br):
+   * `www` → CNAME → `alexcwb01.github.io`
+   * `qualitadesign.com.br` (raiz) → registros A: `185.199.108.153`, `185.199.109.153`,
+     `185.199.110.153`, `185.199.111.153`
+   * Depois marque *Enforce HTTPS* em *Settings → Pages*.
+3. O GitHub Pages ignora o `.htaccess`: lá, `/about` e `/portfolio/...` já abrem as páginas `.html`
+   automaticamente, e os arquivos `marcas-possuem-historia.htm` e `biblioteca.htm` redirecionam os
+   endereços antigos dos posts. Os endereços de spam recebem 404.
+
+## Regenerar (histórico)
+
+> **Atenção:** desde 27/11/2026 o WordPress original serve malware em todas as páginas, então o script
+> não tem mais de onde baixar e não deve ser rodado. **Este repositório é a fonte oficial do site:**
+> as alterações são feitas direto nos arquivos daqui.
 
 ```bash
 pip install requests beautifulsoup4 html5lib
