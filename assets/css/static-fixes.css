@@ -1,0 +1,10 @@
+/* Ajustes do site estático. */
+
+/* Depoimentos ("Opinião"): fotos primeiro, texto depois; fonte menor (era 25px). */
+.testimonial-carousel .block-media { margin-bottom: 30px; }
+.testimonial-carousel .carousel-text .single-box { margin-bottom: 0; }
+.testimonial-carousel .carousel-text .single-box p { font-size: 21px; line-height: 1.55em; }
+@media (max-width: 767px) {
+  .testimonial-carousel .block-media { margin-bottom: 20px; }
+  .testimonial-carousel .carousel-text .single-box p { font-size: 17px; line-height: 1.6em; }
+}

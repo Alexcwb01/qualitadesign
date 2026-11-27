@@ -84,6 +84,19 @@ STATIC_FIXES_JS = """/* Ajustes do site estático. */
 })(jQuery);
 """
 
+# Ajustes de layout pedidos (gravado em assets/css/static-fixes.css, carregado após o CSS do tema).
+STATIC_FIXES_CSS = """/* Ajustes do site estático. */
+
+/* Depoimentos ("Opinião"): fotos primeiro, texto depois; fonte menor (era 25px). */
+.testimonial-carousel .block-media { margin-bottom: 30px; }
+.testimonial-carousel .carousel-text .single-box { margin-bottom: 0; }
+.testimonial-carousel .carousel-text .single-box p { font-size: 21px; line-height: 1.55em; }
+@media (max-width: 767px) {
+  .testimonial-carousel .block-media { margin-bottom: 20px; }
+  .testimonial-carousel .carousel-text .single-box p { font-size: 17px; line-height: 1.6em; }
+}
+"""
+
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 FONT_EXT = {".woff", ".woff2", ".ttf", ".eot", ".otf"}
@@ -616,6 +629,26 @@ class Site:
                     log(f"  aviso: painel do portfólio em subpasta ({out_file}); caminhos podem quebrar")
                 a["data-ajax"] = rel(out_file, frag)
 
+    def customize(self, soup, out_file):
+        """Mudanças de layout pedidas para o site estático (não existem no original)."""
+        # Depoimentos: o carrossel de fotos (.block-media) passa a vir antes das citações (.block-text).
+        for car in soup.select(".testimonial-carousel"):
+            text, media = car.select_one(":scope > .block-text"), car.select_one(":scope > .block-media")
+            if text is not None and media is not None:
+                text.insert_before(media.extract())
+        # CSS de ajustes, depois do CSS do tema
+        path = "assets/css/static-fixes.css"
+        dst = os.path.join(self.out, path)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, "w", encoding="utf-8") as fh:
+            fh.write(STATIC_FIXES_CSS)
+        css_links = soup.head.find_all("link", rel="stylesheet") if soup.head else []
+        tag = soup.new_tag("link", rel="stylesheet", href=rel(out_file, path), media="all")
+        if css_links:
+            css_links[-1].insert_after(tag)
+        elif soup.head is not None:
+            soup.head.append(tag)
+
     # ---------------------------------------------------------------- reescrita
     def rewrite(self, soup, key, out_file):
         a_ = self.assets
@@ -787,6 +820,7 @@ class Site:
             self.prerender_vc_grids(soup, key, out_file)
             self.rewrite(soup, key, out_file)
             self.link_portfolio_frags(soup, out_file)
+            self.customize(soup, out_file)
             dst = os.path.join(self.out, out_file)
             os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
             out = str(soup)
