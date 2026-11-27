@@ -85,15 +85,19 @@ class Fetcher:
                 status, final, ctype = f.read().split("\n")[:3]
             with open(path, "rb") as f:
                 return int(status), final, f.read(), ctype
-        for attempt in range(4):
+        r = None
+        for attempt in range(6):
             try:
                 r = self.s.get(url, timeout=60)
-                break
+                if r.status_code < 500:
+                    break
+                log(f"  HTTP {r.status_code} em {url}, tentando de novo...")
             except requests.RequestException as e:
-                if attempt == 3:
-                    log("  ERRO", url, e)
-                    return 0, url, b"", ""
-                time.sleep(2 ** attempt)
+                log("  ERRO", url, e)
+            time.sleep(2 ** attempt)
+        if r is None or r.status_code >= 500:
+            # o servidor original oscila com 503: não guarda o erro no cache
+            return (r.status_code if r is not None else 0), url, b"", ""
         with open(path, "wb") as f:
             f.write(r.content)
         with open(path + ".meta", "w") as f:
@@ -256,6 +260,10 @@ class Assets:
 
     def process_js(self, js, js_file):
         js = re.sub(r"^//[#@]\s*source(Mapping)?URL=.*$", "", js, flags=re.M)
+        if "sena-main" in js_file:
+            # painel do portfólio: carrega o fragmento estático (data-ajax) em vez de "?ajax=1"
+            js = js.replace('var url=$that.attr("href")+"?ajax=1";',
+                            'var url=$that.attr("data-ajax")||$that.attr("href");')
         if "vc_grid" in js_file:
             # a grade do WPBakery passa a ler um HTML estático pré-renderizado (ver prerender_vc_grids)
             js = js.replace('type:"POST",dataType:"html"', 'type:"GET",dataType:"html"')
@@ -505,6 +513,45 @@ class Site:
             del g["data-vc-public-nonce"]
             log(f"  grade pré-renderizada: {path} ({len(frag.select('.vc_grid-item'))} itens)")
 
+    def prerender_portfolio(self):
+        """O tema abre os projetos num painel (#portfolio-details) carregando "<link>?ajax=1",
+        que no WordPress devolve só o bloco do projeto. Gera esses blocos como HTML estático."""
+        self.portfolio_frags = {}
+        for key in list(self.pages):
+            if not key.startswith("/portfolio/"):
+                continue
+            status, final, data, _ = self.f.get(SITE + key + "?ajax=1")
+            if status != 200 or b"single-portfolio" not in data:
+                log(f"  aviso: fragmento do portfólio {key} indisponível (HTTP {status})")
+                continue
+            frag = BeautifulSoup(data.decode("utf-8", "replace"), "html.parser")
+            self.clean_wordpress(frag)
+            self.remove_spam_cards(frag)
+            # caminhos relativos à raiz: o painel existe em index.html e projects.html
+            self.rewrite(frag, key, "index.html")
+            path = f"assets/data/portfolio/{key.rsplit('/', 1)[1]}.html"
+            os.makedirs(os.path.join(self.out, "assets/data/portfolio"), exist_ok=True)
+            with open(os.path.join(self.out, path), "w", encoding="utf-8") as fh:
+                fh.write(re.sub(r"\n\s*\n+", "\n", str(frag)).strip() + "\n")
+            self.portfolio_frags[page_file(key)] = path
+            n_img = len(frag.find_all("img"))
+            log(f"  painel do portfólio: {path} ({n_img} imagens)" + ("  <- sem conteúdo no site original" if not n_img else ""))
+
+    def link_portfolio_frags(self, soup, out_file):
+        item = soup.select_one(".portfolio-item")
+        if item is not None and soup.find(id="portfolio-details") is None:
+            # o /projects original não tem o painel, então o clique não abria nada: cria como na home
+            sec = item.find_parent("section")
+            if sec is not None:
+                sec.insert_after(soup.new_tag("section", id="portfolio-details"))
+        for a in soup.select(".portfolio-item a[href]"):
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(out_file), a["href"].split("#")[0]))
+            frag = self.portfolio_frags.get(target)
+            if frag:
+                if posixpath.dirname(out_file):
+                    log(f"  aviso: painel do portfólio em subpasta ({out_file}); caminhos podem quebrar")
+                a["data-ajax"] = rel(out_file, frag)
+
     # ---------------------------------------------------------------- reescrita
     def rewrite(self, soup, key, out_file):
         a_ = self.assets
@@ -653,6 +700,7 @@ class Site:
         self.load_sitemaps()
         self.crawl()
         self.collect_legit_posts()
+        self.prerender_portfolio()
         templates = {}
         self.home_ids = {t["id"] for t in BeautifulSoup(self.pages["/"][1], "html5lib").find_all(id=True)}
         for key, (url, text) in self.pages.items():
@@ -674,6 +722,7 @@ class Site:
             self.clean_wordpress(soup)
             self.prerender_vc_grids(soup, key, out_file)
             self.rewrite(soup, key, out_file)
+            self.link_portfolio_frags(soup, out_file)
             dst = os.path.join(self.out, out_file)
             os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
             out = str(soup)
